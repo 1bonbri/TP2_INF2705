@@ -100,6 +100,11 @@ void main()
 
     vec3 color = vec3(0);
     //color += normal/2.0 + vec3(0.5); // DEBUG: Show normals
-    FragColor = texture(diffuseSampler,attribsIn.texCoords);
+    vec4 texColor = texture(diffuseSampler, attribsIn.texCoords);
+
+    if (texColor.a < 0.5)
+        discard;
+
+    FragColor = texColor;
 
 }

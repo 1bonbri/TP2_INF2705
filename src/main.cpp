@@ -164,6 +164,11 @@ struct App : public OpenGLApplication
 
         windmillTexture_.setWrap(GL_CLAMP_TO_EDGE);
 
+        //Active le test de stencil, mais empêche par défaut les écritures dans le tampon. 
+        //On autorise les écritures uniquement au moment où on dessine les clotures.
+        glEnable(GL_STENCIL_TEST);
+        glStencilMask(0x00);
+
 
         
         // TODO: Chargement des textures des deux skyboxes.
@@ -239,7 +244,7 @@ struct App : public OpenGLApplication
 	{
 	    CHECK_GL_ERROR;
 	    // TODO: Partie 2: Ajouter le nettoyage du tampon de stencil
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
         
         ImGui::Begin("Scene Parameters");
         ImGui::Combo("Scene", &currentScene_, SCENE_NAMES, N_SCENE_NAMES);
@@ -504,7 +509,7 @@ struct App : public OpenGLApplication
             0.0f,
             0.0f
         };
-        
+        // Active le shader Phong pour dessiner les clôtures avec leur texture.
         phongShadingShader_.use();
         setMaterial(defaultMat);
         glActiveTexture(GL_TEXTURE0);
@@ -527,7 +532,20 @@ struct App : public OpenGLApplication
 
             sorted.insert({distance, i});
         }
-        
+
+        // Préparer le stencil pour marquer les pixels occupés par les clôtures.
+        // Ces valeurs serviront à distinguer l'intérieur de la clôture de son contour.
+        glEnable(GL_STENCIL_TEST);
+        glStencilMask(0xFF); //Autorise les ecritures dans le stencil
+        glStencilFunc(GL_ALWAYS, 1, 0xFF); //Le test stencil reussit toujours
+        glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE); //Ecrire 1 lorsque le test de profondeur reussit
+
+        // Dessiner les clôtures normalement.
+        // Cette passe sert aussi à enregistrer leur forme dans le stencil.
+        phongShadingShader_.use();
+        setMaterial(defaultMat);
+        fenceTexture_.use();
+
         for (std::map<float, unsigned int>::reverse_iterator it = sorted.rbegin(); it != sorted.rend(); ++it)
         {
             unsigned int i = it->second;
@@ -536,12 +554,66 @@ struct App : public OpenGLApplication
             model = glm::scale(model, glm::vec3(2.0f));
 
             glm::mat4 mvp = projView * model;
+
             phongShadingShader_.setMatrices(mvp, view, model);
             fence_.draw();
             
             // TODO: Partie 2, pour l'effet de contour, il faut agrandir l'objet à partir de la
             //       base du model (origine placé à y=0.5, sur le haut de la clôture)
+            model = model
+                * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.25f, 0.0f))
+                * glm::scale(glm::mat4(1.0f), glm::vec3(1.05f))
+                * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.25f, 0.0f));
         }
+
+        glStencilMask(0x00); // Empêcher toute nouvelle écriture dans le stencil.
+
+        // Dessiner uniquement là où la valeur du stencil est différente de 1.
+        // Cela permet de dessiner le modèle agrandi à l'extérieur de la clôture
+        // originale, sans recouvrir sa surface déjà dessinée.
+        glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+
+        // Ne modifier aucune valeur du stencil pendant cette passe.
+        glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+
+        // Le contour est opaque : désactiver le mélange alpha pour cette passe.
+        glDisable(GL_BLEND);
+
+        // Utiliser le shader spécialisé qui dessine le contour noir.
+        edgeEffectShader_.use();
+
+       
+        for (std::map<float, unsigned int>::reverse_iterator it = sorted.rbegin();
+        it != sorted.rend(); ++it)
+        {
+            unsigned int i = it->second;
+
+            glm::mat4 model = glm::translate(
+                glm::mat4(1.0f), FENCES_POSITIONS[i]);
+
+            model = glm::rotate(
+                model, FENCES_ANGLES[i], glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::scale(model, glm::vec3(2.0f));
+
+            glm::mat4 mvp = projView * model;
+
+            // Envoyer la matrice au shader de contour.
+            glUniformMatrix4fv(
+                edgeEffectShader_.mvpULoc,
+                1,
+                GL_FALSE,
+                glm::value_ptr(mvp));
+
+
+            // Dessiner le modèle agrandi.
+            // Le test stencil empêche de dessiner les fragments à l'intérieur
+            // de la clôture originale : seule la partie extérieure reste visible.
+            fence_.draw();
+        }
+        
+        glStencilMask(0xFF); // Réautoriser les écritures dans le stencil pour les prochains rendus.
+        glDisable(GL_STENCIL_TEST); // Désactiver le test stencil.
+
         // Restaurer les paramètres pour les objets opaques.
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
