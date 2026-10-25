@@ -73,29 +73,31 @@ layout (std140) uniform LightingBlock
 
 void main()
 {
-    // Attribs
-    
-    // TODO: Écriture des attributs de sortie
-    //       Si la normale est nul, lui donner une valeur qui pointe vers le haut.
     attribsOut.texCoords = texCoords;
     attribsOut.color = color;
 
-    if(normal == vec3(0.0)){
-        attribsOut.normal = vec3(0.0, 1.0, 0.0);
-    }else{
-        attribsOut.normal = normal;
-    }
-    
-    gl_Position = mvp*vec4(position, 1.0);
+    // TODO: Écriture des attributs de sortie
+    //       Si la normale est nul, lui donner une valeur qui pointe vers le haut.
+    // Repère de la vue. La normalisation se fait après la rasterisation.
+    vec3 n = normal;
+    if (n == vec3(0.0))
+        n = vec3(0.0, 1.0, 0.0);
+    attribsOut.normal = normalMatrix * n;
 
-    
+    gl_Position = mvp * vec4(position, 1.0);
 
-    // Lights
+    // Position du sommet dans le repère de la caméra. L'observateur est à l'origine.
+    vec3 viewPos = vec3(modelView * vec4(position, 1.0));
+    lightsOut.obsPos = -viewPos;
 
-    // TODO: Écriture des propriétés de lumières en sortie    
-    for(int i = 0; i < nSpotLights; i++)
+    // TODO: Écriture des propriétés de lumières en sortie
+    // La direction stockée est celle des rayons. L pointe vers la source.
+    lightsOut.dirLightDir = mat3(view) * (-dirLight.direction);
+
+    for (int i = 0; i < nSpotLights; i++)
     {
-        // ...
+        vec3 spotPosView = vec3(view * vec4(spotLights[i].position, 1.0));
+        lightsOut.spotLightsDir[i] = spotPosView - viewPos;
+        lightsOut.spotLightsSpotDir[i] = mat3(view) * (-spotLights[i].direction);
     }
-    
 }
