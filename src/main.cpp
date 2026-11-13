@@ -142,6 +142,18 @@ BezierCurve curves[5] =
     },
 };
 
+// Partie 1
+glm::vec3 evaluateBezier(const BezierCurve& curve, float t)
+{
+    float u = 1.0f - t;
+
+    return
+        u * u * u * curve.p0 +
+        3.0f * u * u * t * curve.c0 +
+        3.0f * u * t * t * curve.c1 +
+        t * t * t * curve.p1;
+}
+
 
 // Partie 3
 // Ne pas modifier
@@ -284,13 +296,43 @@ struct App : public OpenGLApplication
         */
         // TODO: Création des nouveaux shaders
 
-    // Partie 1-2
-    // TODO: Initialisation des meshes (béziers, patches)
+        // Partie 1-2
+        // TODO: Initialisation des meshes (béziers, patches)
+        // Création du VAO et du VBO pour la spline Bézier
+        glGenVertexArrays(1, &bezierVAO_);
+        glGenBuffers(1, &bezierVBO_);
 
+        glBindVertexArray(bezierVAO_);
+        glBindBuffer(GL_ARRAY_BUFFER, bezierVBO_);
+
+        // Réserver suffisamment d'espace pour le maximum de subdivisions.
+        // 5 courbes avec 17 segments maximum.
+        const unsigned int MAX_VERTICES = 5 * (17 + 1);
+
+        glBufferData(
+            GL_ARRAY_BUFFER,
+            MAX_VERTICES * sizeof(glm::vec3),
+            nullptr,
+            GL_DYNAMIC_DRAW
+        );
+
+        // Attribut 0 : position
+        glEnableVertexAttribArray(0);
+
+        glVertexAttribPointer(
+            0,
+            3,
+            GL_FLOAT,
+            GL_FALSE,
+            sizeof(glm::vec3),
+            (void*)0
+        );
+
+        glBindVertexArray(0);
 
         glEnable(GL_PROGRAM_POINT_SIZE); // pour être en mesure de modifier gl_PointSize dans les shaders
 
-
+        updateBezierCurve();
 
         // Partie 3
         // TODO: Allocation des SSBO.
@@ -629,8 +671,6 @@ struct App : public OpenGLApplication
             phongShadingShader_.setMatrices(mvp, view, model);
             fence_.draw();
 
-            // TODO: Partie 2, pour l'effet de contour, il faut agrandir l'objet à partir de la
-            //       base du model (origine placé à y=0.5, sur le haut de la clôture)
             model = model
                 * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.25f, 0.0f))
                 * glm::scale(glm::mat4(1.0f), glm::vec3(1.05f))
@@ -706,9 +746,6 @@ struct App : public OpenGLApplication
         // setMatrices attend une matrice de modèle modifiable.
         mat4 model = modelMatrix;
         phongShadingShader_.setMatrices(mvp, view, model);
-
-
-        // TODO: Activer la texture du sol avant son dessin.
         grassTexture_.use();
         grass_.draw();
 
@@ -817,14 +854,81 @@ struct App : public OpenGLApplication
     {
         material_.updateData(&mat, 0, sizeof(Material));
     }
+    void updateBezierCurve()
+    {
+        bezierVertices_.clear();
+        bezierDistances_.clear();
 
-    // TODO: Ajouter ces attributs
-    unsigned int bezierNPoints = 3; // Nombre de points supplémentaires sur la courbe, 0 est une ligne droite
-    unsigned int oldBezierNPoints = 0;
+        unsigned int divisions = bezierNPoints + 1;
 
-    int cameraMode = 0;
-    float cameraAnimation = 0.f;
-    bool isAnimatingCamera = false;
+        float totalDistance = 0.0f;
+        glm::vec3 previousPoint;
+
+        for (int i = 0; i < 5; i++)
+        {
+            for (unsigned int j = 0; j <= divisions; j++)
+            {
+                float t = (float)j / divisions;
+
+                glm::vec3 point = evaluateBezier(curves[i], t);
+
+                if (!bezierVertices_.empty())
+                {
+                    totalDistance += glm::length(point - previousPoint);
+                }
+
+                bezierVertices_.push_back(point);
+                bezierDistances_.push_back(totalDistance);
+
+                previousPoint = point;
+            }
+        }
+
+        bezierTotalLength_ = totalDistance;
+
+        glBindBuffer(GL_ARRAY_BUFFER, bezierVBO_);
+
+        glBufferSubData(
+            GL_ARRAY_BUFFER,
+            0,
+            bezierVertices_.size() * sizeof(glm::vec3),
+            bezierVertices_.data()
+        );
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+    }
+
+    void drawBezierCurve(glm::mat4& projView, glm::mat4& view)
+    {
+        phongShadingShader_.use();
+
+        setMaterial(bezierMat);
+        whiteTexture_.use();
+
+        glm::mat4 model(1.0f);
+        glm::mat4 mvp = projView * model;
+
+        phongShadingShader_.setMatrices(mvp, view, model);
+
+        glBindVertexArray(bezierVAO_);
+
+        unsigned int verticesPerCurve = bezierNPoints + 2;
+
+        glLineWidth(3.0f);
+
+        for (int i = 0; i < 5; i++)
+        {
+            glDrawArrays(
+                GL_LINE_STRIP,
+                i * verticesPerCurve,
+                verticesPerCurve
+            );
+        }
+
+        glBindVertexArray(0);
+    }
+   
+
 
     void sceneMain()
     {
@@ -836,6 +940,17 @@ struct App : public OpenGLApplication
             toggleStreetlight();
             lights_.updateData(&lightsData_, 0, sizeof(DirectionalLight) + N_SPOTLIGHTS * sizeof(SpotLight));
         }
+
+
+        //TODO: à Ajouter
+        ImGui::SliderInt("Bezier Number Of Points", (int*)&bezierNPoints, 0, 16);
+        if (ImGui::Button("Animate Camera"))
+        {
+            isAnimatingCamera = true;
+            cameraAnimation = 0.0f;
+            cameraMode = 1;
+        }
+
         ImGui::SliderFloat("Wind Speed", &windmill_.windSpeed, 0.0f, 20.0f, "%.2f m/s");
         ImGui::SliderFloat("Wind Angle", &windmill_.windAngle, -M_PI, M_PI, "%.2f°");
         ImGui::End();
@@ -843,15 +958,10 @@ struct App : public OpenGLApplication
         updateCameraInput();
         windmill_.update(deltaTime_);
 
+        skyShader_.use();
         glm::mat4 view = getViewMatrix();
         glm::mat4 proj = getPerspectiveProjectionMatrix();
         glm::mat4 projView = proj * view;
-
-        // TODO: Dessin des éléments
-        // ...
-        // Penser à votre ordre de dessin, les todos sont volontairement mélangé ici.
-
-        skyShader_.use();
 
         // Garder la rotation de la caméra, retirer sa translation.
         glm::mat4 skyView = glm::mat4(glm::mat3(view));
@@ -883,7 +993,6 @@ struct App : public OpenGLApplication
         phongShadingShader_.use();
         setMaterial(defaultMat);
 
-        // TODO: Activer la texture du moulin avant son dessin.
         windmillTexture_.use();
         windmill_.draw(projView, view);
 
@@ -904,20 +1013,6 @@ struct App : public OpenGLApplication
 
         // Partie 1-2
 
-        ImGui::Begin("Scene Parameters");
-
-        // TODO: À ajouter
-        ImGui::SliderInt("Bezier Number Of Points", (int*)&bezierNPoints, 0, 16);
-        if (ImGui::Button("Animate Camera"))
-        {
-            isAnimatingCamera = true;
-            cameraMode = 1;
-        }
-        // Conserver les autres options du menu
-        // ...
-
-        ImGui::End();
-
         // ...
 
         if (isAnimatingCamera)
@@ -927,7 +1022,63 @@ struct App : public OpenGLApplication
                 // TODO: Animation de la caméra
                 // cameraPosition_ = ...
 
-                cameraAnimation += deltaTime_ / 3.0;
+                // Avancement de l'animation entre 0 et 5 secondes.
+                cameraAnimation += deltaTime_ / 3.0f;
+
+                // Limiter le temps à 1 pour éviter de dépasser la fin.
+                float animationTime = glm::clamp(cameraAnimation / 5.0f, 0.0f, 1.0f);
+
+                // Distance totale parcourue sur la spline.
+                float currentDistance = animationTime * bezierTotalLength_;
+
+                // Trouver les sommets qui encadrent la distance actuelle.
+                auto it = std::lower_bound(
+                    bezierDistances_.begin(),
+                    bezierDistances_.end(),
+                    currentDistance
+                );
+
+                if (it != bezierDistances_.end())
+                {
+                    unsigned int index = std::distance(
+                        bezierDistances_.begin(), it
+                    );
+
+                    if (index == 0)
+                    {
+                        cameraPosition_ = bezierVertices_[0];
+                    }
+                    else
+                    {
+                        float d0 = bezierDistances_[index - 1];
+                        float d1 = bezierDistances_[index];
+
+                        float t = (d1 > d0)
+                            ? (currentDistance - d0) / (d1 - d0)
+                            : 0.0f;
+
+                        cameraPosition_ = glm::mix(
+                            bezierVertices_[index - 1],
+                            bezierVertices_[index],
+                            t
+                        );
+                    }
+                }
+                else
+                {
+                    cameraPosition_ = bezierVertices_.back();
+                }
+
+                // Toujours regarder le moulin.
+                glm::vec3 distance = glm::vec3(0, 2, -10) - cameraPosition_;
+
+                float horizontalDistance = sqrt(
+                    distance.x * distance.x + distance.z * distance.z
+                );
+
+                cameraOrientation_.y = atan2(-distance.x, -distance.z);
+                cameraOrientation_.x = atan2(distance.y, horizontalDistance);
+      
             }
             else
             {
@@ -953,10 +1104,11 @@ struct App : public OpenGLApplication
             oldBezierNPoints = bezierNPoints;
 
             // TODO: Calcul et mise à jour de la courbe
+            updateBezierCurve();
         }
 
         // TODO: Dessin de la courbe
-        // glDraw...
+        drawBezierCurve(projView, view);
 
 
         // TODO: Dessin du gazon
@@ -1059,10 +1211,22 @@ private:
        TP3
        ---------------------------------------------------------------------------------------------------------------------------------------------------------
     */
+    // TODO: Ajouter ces attributs
+    unsigned int bezierNPoints = 3; // Nombre de points supplémentaires sur la courbe, 0 est une ligne droite
+    unsigned int oldBezierNPoints = 0;
 
+    int cameraMode = 0;
+    float cameraAnimation = 0.f;
+    bool isAnimatingCamera = false;
     // Partie 1-2
     // TODO: Ajouter les attributs de vbo, ebo, vao nécessaire
+    // Partie 1 : Bézier
+    GLuint bezierVAO_;
+    GLuint bezierVBO_;
 
+    std::vector<glm::vec3> bezierVertices_;
+    std::vector<float> bezierDistances_;
+    float bezierTotalLength_ = 0.0f;
 
 
     // Partie 3

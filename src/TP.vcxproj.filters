@@ -107,6 +107,15 @@
     <None Include="shaders\sky.fs.glsl">
       <Filter>Shader Source Files</Filter>
     </None>
+    <None Include="shaders\grass.fs.glsl" />
+    <None Include="shaders\grass.gs.glsl" />
+    <None Include="shaders\grass.tcs.glsl" />
+    <None Include="shaders\grass.tes.glsl" />
+    <None Include="shaders\grass.vs.glsl" />
+    <None Include="shaders\particlesDraw.fs.glsl" />
+    <None Include="shaders\particlesDraw.gs.glsl" />
+    <None Include="shaders\particlesDraw.vs.glsl" />
+    <None Include="shaders\particlesUpdate.cs.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\inf2705\OpenGLApplication.hpp">

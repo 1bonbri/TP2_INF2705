@@ -182,6 +182,15 @@
     <None Include="README.md" />
     <None Include="shaders\basic.fs.glsl" />
     <None Include="shaders\basic.vs.glsl" />
+    <None Include="shaders\grass.fs.glsl" />
+    <None Include="shaders\grass.gs.glsl" />
+    <None Include="shaders\grass.tcs.glsl" />
+    <None Include="shaders\grass.tes.glsl" />
+    <None Include="shaders\grass.vs.glsl" />
+    <None Include="shaders\particlesDraw.fs.glsl" />
+    <None Include="shaders\particlesDraw.gs.glsl" />
+    <None Include="shaders\particlesDraw.vs.glsl" />
+    <None Include="shaders\particlesUpdate.cs.glsl" />
     <None Include="shaders\transform.fs.glsl" />
     <None Include="shaders\transform.vs.glsl" />
     <None Include="shaders\phong.vs.glsl" />
