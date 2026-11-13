@@ -28,6 +28,7 @@
 #include "shaders.hpp"
 #include "textures.hpp"
 #include "uniform_buffer.hpp"
+#include "shader_storage_buffer.hpp"
 
 
 
@@ -89,6 +90,72 @@ Material grassMat =
     100.0f
 };
 
+Material bezierMat =
+{
+    {1.0f, 1.0f, 1.0f, 0.0f},
+    {0.0f, 0.0f, 0.0f, 0.0f},
+    {0.0f, 0.0f, 0.0f, 0.0f},
+    {0.0f, 0.0f, 0.0f},
+    1.0f
+};
+
+struct BezierCurve
+{
+    glm::vec3 p0;
+    glm::vec3 c0;
+    glm::vec3 c1;
+    glm::vec3 p1;
+};
+
+
+BezierCurve curves[5] =
+{
+    {
+        glm::vec3(-0.509, 2.403, 6.924),
+        glm::vec3(2.412, 12.011, 20.396),
+        glm::vec3(-23.731, 5.855, 25.199),
+        glm::vec3(-25.732, 15.439, 13.561),
+    },
+    {
+        glm::vec3(-25.732, 15.439, 13.561),
+        glm::vec3(-27.069, 21.845, 5.781),
+        glm::vec3(-4.807, 26.461, -10.716),
+        glm::vec3(-7.574, 25.967, -12.861),
+    },
+    {
+        glm::vec3(-7.574, 25.967, -12.861),
+        glm::vec3(-21.299, 23.516, -23.495),
+        glm::vec3(-18.956, 13.960, -36.813),
+        glm::vec3(-3.324, 11.588, -33.743),
+    },
+    {
+        glm::vec3(-3.324, 11.588, -33.743),
+        glm::vec3(4.812, 10.354, -32.145),
+        glm::vec3(8.408, 22.100, -7.555),
+        glm::vec3(23.264, 6.067, -5.370),
+    },
+    {
+        glm::vec3(23.264, 6.067, -5.370),
+        glm::vec3(29.367, -0.518, -4.473),
+        glm::vec3(2.412, 12.011, 20.396),
+        glm::vec3(-0.088, 12.011, 17.896),
+    },
+};
+
+
+// Partie 3
+// Ne pas modifier
+struct Particle
+{
+    glm::vec3 position;
+    GLfloat zOrientation;
+    glm::vec4 velocity; // vec3, but padded
+    glm::vec4 color;
+    glm::vec2 size;
+    GLfloat timeToLive;
+    GLfloat maxTimeToLive;
+};
+
 
 struct App : public OpenGLApplication
 {
@@ -98,6 +165,10 @@ struct App : public OpenGLApplication
         , cameraOrientation_(0.f, 0.f)
         , currentScene_(0)
         , isMouseMotionEnabled_(false)
+        , totalTime(0.0)       // Initialiser à 0
+        , timerParticles_(0.0) // Initialiser à 0
+        , nParticles_(0)       // Initialiser à 0
+
     {}
 
     void init() override
@@ -122,33 +193,16 @@ struct App : public OpenGLApplication
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
 
-        // Partie 1
-
-        // Création via les classes ShaderProgram fournies pour le TP2.
-        // Le contenu des shaders GLSL reste à compléter.
         phongShadingShader_.create();
         edgeEffectShader_.create();
         skyShader_.create();
 
-
-        // TODO: À ajouter.
         windmill_.phongShadingShader = &phongShadingShader_;
 
-
-
-        // TODO: Chargement des textures, ainsi que la configuration de leurs paramètres.
-        //       
-        //       Le mipmap __ne doit pas__ être activé pour toutes les textures.
-        //
-
-        //Initialiser les textures en RAM
         grassTexture_.load("../textures/grass.jpg");
         fenceTexture_.load("../textures/fence.png");
         windmillTexture_.load("../textures/windmill.png");
 
-        //On veut que l'herbe et le windmill ai une texture lisse
-        // On utilise donc un filtering interpolation linéaire
-        // On utilise aussi le mipmap ou eviter l'aliasing
         grassTexture_.setFiltering(GL_LINEAR);
         windmillTexture_.setFiltering(GL_LINEAR);
         fenceTexture_.setFiltering(GL_NEAREST);
@@ -156,25 +210,16 @@ struct App : public OpenGLApplication
         grassTexture_.enableMipmap();
         windmillTexture_.enableMipmap();
 
-
-        //On veut que la texture de fence et le sol se repetent
         fenceTexture_.setWrap(GL_REPEAT);
         grassTexture_.setWrap(GL_REPEAT);
 
         windmillTexture_.setWrap(GL_CLAMP_TO_EDGE);
 
-        // La texture blanche n'a pas besoin d'interpolation.
         whiteTexture_.load("../textures/white.png");
         whiteTexture_.setFiltering(GL_NEAREST);
 
-        //Active le test de stencil, mais empêche par défaut les écritures dans le tampon. 
-        //On autorise les écritures uniquement au moment où on dessine les clotures.
         glEnable(GL_STENCIL_TEST);
         glStencilMask(0x00);
-
-
-
-        // TODO: Chargement des textures des deux skyboxes.
 
         const char* pathes[] = {
             "../textures/skybox/Daylight Box_Right.bmp",
@@ -199,9 +244,6 @@ struct App : public OpenGLApplication
 
         loadModels();
 
-        // Partie 3
-
-        // TODO: À ajouter. Aucune modification nécessaire.
         material_.allocate(&defaultMat, sizeof(Material));
         material_.setBindingIndex(0);
 
@@ -212,9 +254,6 @@ struct App : public OpenGLApplication
             {0.5f, 0.5f, 0.5f, 0.0f},
             {0.5f, -1.0f, 0.5f, 0.0f}
         };
-
-
-        // Initialisation des paramètres de lumière
 
         lightsData_.spotLights[0].position = glm::vec4(-1.6, 0.64, -0.45, 0.0f);
         lightsData_.spotLights[0].direction = glm::vec3(-10, -1, 0);
@@ -238,6 +277,39 @@ struct App : public OpenGLApplication
         lights_.allocate(&lightsData_, sizeof(lightsData_));
         lights_.setBindingIndex(1);
 
+        /*
+        -----------------------------------------------------------------------------------
+        TP3
+        -----------------------------------------------------------------------------------
+        */
+        // TODO: Création des nouveaux shaders
+
+    // Partie 1-2
+    // TODO: Initialisation des meshes (béziers, patches)
+
+
+        glEnable(GL_PROGRAM_POINT_SIZE); // pour être en mesure de modifier gl_PointSize dans les shaders
+
+
+
+        // Partie 3
+        // TODO: Allocation des SSBO.
+        //       Allouer suffisament d'espace pour le nombre maximal de particules.
+        //       Seulement le buffer en entrée à besoin d'être initialisé à 0.
+        //       Réfléchisser au type d'usage.
+
+        // TODO: Créer un vao pour le dessin des particules et activer les attributs nécessaires.
+
+
+        // TODO: Création des nouveaux shaders.
+
+
+        // TODO: Initialisation de la nouvelle texture pour les particules.
+        // "../textures/particle.png"
+
+
+
+
         CHECK_GL_ERROR;
     }
 
@@ -245,15 +317,14 @@ struct App : public OpenGLApplication
     // Appelée à chaque trame. Le buffer swap est fait juste après.
     void drawFrame() override
     {
+        // TODO TP3: Au besoin, ajouter la recharge de vos nouveaux shaders
+   //       après if (ImGui::Button("Reload Shaders")).
         CHECK_GL_ERROR;
-        // TODO: Partie 2: Ajouter le nettoyage du tampon de stencil
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
         ImGui::Begin("Scene Parameters");
         ImGui::Combo("Scene", &currentScene_, SCENE_NAMES, N_SCENE_NAMES);
 
-        // TODO: À ajouter.
-        // Et oui, il est désormais possible de recharger les shaders en gardant l'application ouvert.
         if (ImGui::Button("Reload Shaders"))
         {
             CHECK_GL_ERROR;
@@ -387,8 +458,6 @@ struct App : public OpenGLApplication
 
         grass_.load(ground, sizeof(ground), planeElements, sizeof(planeElements));
     }
-
-    // TODO: À modifier, ajouter les textures, et l'effet de contour.
     void drawFences(glm::mat4& projView, glm::mat4& view)
     {
         const std::vector<glm::vec3> FENCES_POSITIONS =
@@ -623,7 +692,6 @@ struct App : public OpenGLApplication
         glEnable(GL_CULL_FACE);
     }
 
-    // TODO: À modifier, ajouter les textures
     void drawGround(glm::mat4& projView, glm::mat4& view)
     {
         setMaterial(grassMat);
@@ -692,7 +760,6 @@ struct App : public OpenGLApplication
         return viewMatrix;
     }
 
-    // TODO: À ajouter. Pas de modification.
     void setLightingUniform()
     {
         phongShadingShader_.use();
@@ -702,7 +769,6 @@ struct App : public OpenGLApplication
         glUniform3f(phongShadingShader_.globalAmbientULoc, ambientIntensity, ambientIntensity, ambientIntensity);
     }
 
-    // TODO: À ajouter. Pas de modification.
     void toggleSun()
     {
         if (isDay_)
@@ -719,7 +785,6 @@ struct App : public OpenGLApplication
         }
     }
 
-    // TODO: À ajouter. Pas de modification.
     void toggleSpotlights()
     {
         if (isDay_)
@@ -748,14 +813,19 @@ struct App : public OpenGLApplication
         toggleSpotlights();
     }
 
-    // TODO: À ajouter. Pas de modification.
     void setMaterial(Material& mat)
     {
         material_.updateData(&mat, 0, sizeof(Material));
     }
 
-    // TODO: À ajouter et modifier.
-    //       Ajouter les textures, les skyboxes, etc.
+    // TODO: Ajouter ces attributs
+    unsigned int bezierNPoints = 3; // Nombre de points supplémentaires sur la courbe, 0 est une ligne droite
+    unsigned int oldBezierNPoints = 0;
+
+    int cameraMode = 0;
+    float cameraAnimation = 0.f;
+    bool isAnimatingCamera = false;
+
     void sceneMain()
     {
         ImGui::Begin("Scene Parameters");
@@ -823,6 +893,117 @@ struct App : public OpenGLApplication
 
         // Dessiner les clôtures transparentes après les objets opaques.
         drawFences(projView, view);
+
+
+
+        /*
+        ---------------------------------------------------------------------------------------------------------------------------------------------------------
+		TP3
+		---------------------------------------------------------------------------------------------------------------------------------------------------------
+        */
+
+        // Partie 1-2
+
+        ImGui::Begin("Scene Parameters");
+
+        // TODO: À ajouter
+        ImGui::SliderInt("Bezier Number Of Points", (int*)&bezierNPoints, 0, 16);
+        if (ImGui::Button("Animate Camera"))
+        {
+            isAnimatingCamera = true;
+            cameraMode = 1;
+        }
+        // Conserver les autres options du menu
+        // ...
+
+        ImGui::End();
+
+        // ...
+
+        if (isAnimatingCamera)
+        {
+            if (cameraAnimation < 5)
+            {
+                // TODO: Animation de la caméra
+                // cameraPosition_ = ...
+
+                cameraAnimation += deltaTime_ / 3.0;
+            }
+            else
+            {
+                // Remise à 0 de l'orientation
+                glm::vec3 distance = glm::vec3(0, 2, -10) - cameraPosition_;
+
+                float horizontalDistance = sqrt(distance.x * distance.x + distance.z * distance.z);
+
+                cameraOrientation_.y = atan2(-distance.x, -distance.z);
+                cameraOrientation_.x = atan2(distance.y, horizontalDistance);
+
+                cameraAnimation = 0.f;
+                isAnimatingCamera = false;
+                cameraMode = 0;
+            }
+        }
+
+        // ...
+
+        bool hasNumberOfSidesChanged = bezierNPoints != oldBezierNPoints;
+        if (hasNumberOfSidesChanged)
+        {
+            oldBezierNPoints = bezierNPoints;
+
+            // TODO: Calcul et mise à jour de la courbe
+        }
+
+        // TODO: Dessin de la courbe
+        // glDraw...
+
+
+        // TODO: Dessin du gazon
+        // glDraw...
+
+
+        // ...
+
+        // Partie 3
+        // TODO: Attention à l'endroit où vous faites votre dessin, la texture des particules est transparente.
+
+        // Particles    
+        totalTime += deltaTime_;
+        timerParticles_ += deltaTime_;
+        const float particlesSpawnInterval = 0.2f;
+
+        unsigned int particlesToAdd = timerParticles_ / particlesSpawnInterval;
+        timerParticles_ -= particlesToAdd * particlesSpawnInterval;
+
+        nParticles_ += particlesToAdd;
+        if (nParticles_ > MAX_PARTICLES_)
+            nParticles_ = MAX_PARTICLES_;
+
+        // Particles update
+
+        // TODO: Mise à jour des données à l'aide du compute shader
+        //       Envoyer vos uniforms.
+
+        // Utiliser la position de la meule pour calculer la nouvelle position et direction d'émission de particule.
+        // glm::vec3 emitterPos = vec3(0.0, 0.0, 0.0);
+        // glm::vec3 emitterDir = vec3(1, 0, 0);
+
+        // TODO: Configurer les buffers d'entrée et de sortie.
+
+        // TODO: Envois de la commande de calcul.
+        //       Pas besoin d'optimiser le nombre de work group vs la taille local (dans le shader).
+
+
+        // Particles draw
+
+        // TODO: Dessin des particules. Utiliser le nombre de particules actuellement utilisées.
+        //       Utiliser la texture et envoyer vos uniforms.
+        //       Il sera nécessaire de spécifier les entrée en spécifiant le buffer d'entrée.
+        //       Activer le blending et restaurer l'état du contexte modifié.
+
+        // TODO: Interchanger les deux buffers, celui en entrée devient la sortie, et vice versa.
+
     }
 
 private:
@@ -844,6 +1025,7 @@ private:
     // Uniform buffers
     UniformBuffer material_;
     UniformBuffer lights_;
+
 
     struct {
         DirectionalLight dirLight;
@@ -872,6 +1054,33 @@ private:
     int currentScene_;
 
     bool isMouseMotionEnabled_;
+    /*
+       ---------------------------------------------------------------------------------------------------------------------------------------------------------
+       TP3
+       ---------------------------------------------------------------------------------------------------------------------------------------------------------
+    */
+
+    // Partie 1-2
+    // TODO: Ajouter les attributs de vbo, ebo, vao nécessaire
+
+
+
+    // Partie 3
+    // TODO: Attributs supplémentaires
+    GLuint vaoParticles_;
+
+    float totalTime;
+    float timerParticles_;
+
+    static const unsigned int MAX_PARTICLES_ = 64;
+    unsigned int nParticles_;
+
+    // TODO: Ajouter vos shaders
+    // TODO: Ajouter la texture de particule
+
+    // Ssbo
+    ShaderStorageBuffer particles_[2];
+
 };
 
 

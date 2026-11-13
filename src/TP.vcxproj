@@ -167,6 +167,7 @@
     <ClCompile Include="..\imgui\imgui_impl_opengl3.cpp" />
     <ClCompile Include="..\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="shader_storage_buffer.cpp" />
     <ClCompile Include="windmill.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="model.cpp" />
@@ -195,6 +196,7 @@
     <ClInclude Include="..\inf2705\sfml_utils.hpp" />
     <ClInclude Include="..\inf2705\utils.hpp" />
     <ClInclude Include="model.hpp" />
+    <ClInclude Include="shader_storage_buffer.hpp" />
     <ClInclude Include="windmill.hpp" />
     <ClInclude Include="model_data.hpp" />
     <ClInclude Include="textures.hpp" />
