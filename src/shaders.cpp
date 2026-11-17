@@ -77,3 +77,21 @@ void PhongShading::setMatrices(glm::mat4& mvp, glm::mat4& view, glm::mat4& model
     glUniformMatrix4fv(modelViewULoc, 1, GL_FALSE, &modelView[0][0]);
     glUniformMatrix3fv(normalULoc, 1, GL_TRUE, glm::value_ptr(glm::inverse(glm::mat3(modelView))));
 }
+
+
+void GrassShader::load()
+{
+    name_ = "Grass";
+    loadShaderSource(GL_VERTEX_SHADER, "./shaders/grass.vs.glsl");
+    loadShaderSource(GL_TESS_CONTROL_SHADER, "./shaders/grass.tcs.glsl");
+    loadShaderSource(GL_TESS_EVALUATION_SHADER, "./shaders/grass.tes.glsl");
+    loadShaderSource(GL_GEOMETRY_SHADER, "./shaders/grass.gs.glsl");
+    loadShaderSource(GL_FRAGMENT_SHADER, "./shaders/grass.fs.glsl");
+    link();
+}
+
+void GrassShader::getAllUniformLocations()
+{
+    mvpULoc = glGetUniformLocation(id_, "mvp");
+    modelViewULoc = glGetUniformLocation(id_, "modelView");
+}

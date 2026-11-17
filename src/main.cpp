@@ -183,6 +183,12 @@ struct App : public OpenGLApplication
 
     {}
 
+    ~App() override
+    {
+        glDeleteBuffers(1, &grassVBO_);
+        glDeleteVertexArrays(1, &grassVAO_);
+    }
+
     void init() override
     {
         // Le message expliquant les touches de clavier.
@@ -294,7 +300,12 @@ struct App : public OpenGLApplication
         TP3
         -----------------------------------------------------------------------------------
         */
-        // TODO: Création des nouveaux shaders
+        grassShader_.create();
+        wheatTexture_.load("../textures/wheat_crop.png");
+        wheatTexture_.setFiltering(GL_LINEAR);
+        wheatTexture_.setWrap(GL_CLAMP_TO_EDGE);
+        wheatTexture_.enableMipmap();
+        initGrass();
 
         // Partie 1-2
         // TODO: Initialisation des meshes (béziers, patches)
@@ -347,7 +358,7 @@ struct App : public OpenGLApplication
 
 
         // TODO: Initialisation de la nouvelle texture pour les particules.
-        // "../textures/particle.png"
+        // "../textures/smoke.png"
 
 
 
@@ -373,6 +384,7 @@ struct App : public OpenGLApplication
             edgeEffectShader_.reload();
             phongShadingShader_.reload();
             skyShader_.reload();
+            grassShader_.reload();
 
             setLightingUniform();
             CHECK_GL_ERROR;
@@ -505,7 +517,7 @@ struct App : public OpenGLApplication
         const std::vector<glm::vec3> FENCES_POSITIONS =
         {
             // Moulin centré en x = 0, z = -10. Sol à y = -0.1.
-            // Panneaux espacés de 2 unités : prévoir une échelle de 2 au dessin.
+            // Panneaux espacés de 2 unités.
             //       _______
             //       |     |
             //       |  M  |
@@ -749,6 +761,60 @@ struct App : public OpenGLApplication
         grassTexture_.use();
         grass_.draw();
 
+    }
+
+    void initGrass()
+    {
+        // Division : 30 carrés de 5 x 5 unités par côté.
+        std::vector<glm::vec3> vertices;
+        for (float x = -25.0f; x < 25.0f; x += 5.0f)
+        {
+            if (x >= -10.0f && x < 10.0f)
+                continue;
+
+            for (float z = -25.0f; z < 25.0f; z += 5.0f)
+            {
+                // Coins du carré.
+                glm::vec3 v0(x, -0.1f, z);
+                glm::vec3 v1(x + 5.0f, -0.1f, z);
+                glm::vec3 v2(x + 5.0f, -0.1f, z + 5.0f);
+                glm::vec3 v3(x, -0.1f, z + 5.0f);
+
+                vertices.push_back(v0);
+                vertices.push_back(v2);
+                vertices.push_back(v1);
+                vertices.push_back(v0);
+                vertices.push_back(v3);
+                vertices.push_back(v2);
+            }
+        }
+
+        grassVertexCount_ = static_cast<GLsizei>(vertices.size());
+        glGenVertexArrays(1, &grassVAO_);
+        glGenBuffers(1, &grassVBO_);
+        glBindVertexArray(grassVAO_);
+        glBindBuffer(GL_ARRAY_BUFFER, grassVBO_);
+        glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), nullptr);
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glPatchParameteri(GL_PATCH_VERTICES, 3);
+    }
+
+    void drawGrass(glm::mat4& projView, glm::mat4& view)
+    {
+        grassShader_.use();
+        glUniformMatrix4fv(grassShader_.mvpULoc, 1, GL_FALSE, glm::value_ptr(projView));
+        glUniformMatrix4fv(grassShader_.modelViewULoc, 1, GL_FALSE, glm::value_ptr(view));
+        glActiveTexture(GL_TEXTURE0);
+        wheatTexture_.use();
+
+        glDisable(GL_CULL_FACE);
+        glBindVertexArray(grassVAO_);
+        glDrawArrays(GL_PATCHES, 0, grassVertexCount_);
+        glBindVertexArray(0);
+        glEnable(GL_CULL_FACE);
     }
 
     // Le modèle du projecteur est aligné sur -Y et n'a pas de normales.
@@ -997,6 +1063,7 @@ struct App : public OpenGLApplication
         windmill_.draw(projView, view);
 
         drawGround(projView, view);
+        drawGrass(projView, view);
 
         drawSpotlights(projView, view);
 
@@ -1111,10 +1178,6 @@ struct App : public OpenGLApplication
         drawBezierCurve(projView, view);
 
 
-        // TODO: Dessin du gazon
-        // glDraw...
-
-
         // ...
 
         // Partie 3
@@ -1165,9 +1228,11 @@ private:
     EdgeEffect edgeEffectShader_;
     PhongShading phongShadingShader_;
     Sky skyShader_;
+    GrassShader grassShader_;
 
     // Textures
     Texture2D grassTexture_;
+    Texture2D wheatTexture_;
     Texture2D fenceTexture_;
     Texture2D windmillTexture_;
     Texture2D whiteTexture_;
@@ -1228,6 +1293,9 @@ private:
     std::vector<float> bezierDistances_;
     float bezierTotalLength_ = 0.0f;
 
+    GLuint grassVAO_ = 0;
+    GLuint grassVBO_ = 0;
+    GLsizei grassVertexCount_ = 0;
 
     // Partie 3
     // TODO: Attributs supplémentaires
@@ -1255,10 +1323,10 @@ int main(int argc, char* argv[])
     settings.context.depthBits = 24;
     settings.context.stencilBits = 8;
     settings.context.antiAliasingLevel = 4;
-    settings.context.majorVersion = 3;
+    settings.context.majorVersion = 4;
     settings.context.minorVersion = 3;
     settings.context.attributeFlags = sf::ContextSettings::Attribute::Core;
 
     App app;
-    app.run(argc, argv, "Tp2", settings);
+    app.run(argc, argv, "Tp3", settings);
 }

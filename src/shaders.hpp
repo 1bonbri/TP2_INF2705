@@ -67,3 +67,15 @@ protected:
     virtual void getAllUniformLocations() override;
     virtual void assignAllUniformBlockIndexes() override;
 };
+
+
+class GrassShader : public ShaderProgram
+{
+public:
+    GLint mvpULoc;
+    GLint modelViewULoc;
+
+protected:
+    virtual void load() override;
+    virtual void getAllUniformLocations() override;
+};
