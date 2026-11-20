@@ -192,7 +192,28 @@ void Windmill::draw(glm::mat4& projView, glm::mat4& view)
     sendMatrixToShaders(projView, view, millstoneMatrix);
     millstone_.draw();
 
-
-
 }
-    
+
+glm::vec3 Windmill::getMillstonePosition() const
+{
+    const glm::mat4 windmillMatrix = glm::scale(
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.3f, -10.0f)),
+        glm::vec3(5.0f)
+    );
+
+    const float mainBeamAngle = 5.0f * rotorAngle;
+
+    glm::mat4 mainBeamMatrix = glm::rotate(
+        windmillMatrix, mainBeamAngle, glm::vec3(0, 1, 0)
+    );
+
+    glm::mat4 millstoneMatrix = glm::translate(
+        mainBeamMatrix, glm::vec3(-0.48f, 0.15f, 0)
+    );
+
+    millstoneMatrix = glm::rotate(
+        millstoneMatrix, 2.27f * mainBeamAngle, glm::vec3(1, 0, 0)
+    );
+
+    return glm::vec3(millstoneMatrix * glm::vec4(0, 0, 0, 1));
+}

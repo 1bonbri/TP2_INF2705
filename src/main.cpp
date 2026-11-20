@@ -77,7 +77,7 @@ Material defaultMat =
     {0.0f, 0.0f, 0.0f, 0.0f},
     {1.0f, 1.0f, 1.0f, 0.0f},
     {1.0f, 1.0f, 1.0f, 0.0f},
-    {0.7f, 0.7f, 0.7f},
+    {0.2f, 0.2f, 0.2f},
     10.0f
 };
 
@@ -187,6 +187,7 @@ struct App : public OpenGLApplication
     {
         glDeleteBuffers(1, &grassVBO_);
         glDeleteVertexArrays(1, &grassVAO_);
+        glDeleteVertexArrays(1, &vaoParticles_);
     }
 
     void init() override
@@ -270,21 +271,21 @@ struct App : public OpenGLApplication
             {0.2f, 0.2f, 0.2f, 0.0f},
             {1.0f, 1.0f, 1.0f, 0.0f},
             {0.5f, 0.5f, 0.5f, 0.0f},
-            {0.5f, -1.0f, 0.5f, 0.0f}
+            {0.2f,-0.5f,-0.7f, 0.0f}
         };
 
-        lightsData_.spotLights[0].position = glm::vec4(-1.6, 0.64, -0.45, 0.0f);
-        lightsData_.spotLights[0].direction = glm::vec3(-10, -1, 0);
-        lightsData_.spotLights[0].exponent = 4.0f;
-        lightsData_.spotLights[0].openingAngle = 30.f;
+        lightsData_.spotLights[0].position = glm::vec4(-1.5, 10.0, -1.5, 0.0f);
+        lightsData_.spotLights[0].direction = glm::vec3(2, -10, -3);
+        lightsData_.spotLights[0].exponent = 16.0f;
+        lightsData_.spotLights[0].openingAngle = 45.f;
 
-        lightsData_.spotLights[1].position = glm::vec4(-1.6, 0.64, 0.45, 0.0f);
-        lightsData_.spotLights[1].direction = glm::vec3(-10, -1, 0);
-        lightsData_.spotLights[1].exponent = 4.0f;
-        lightsData_.spotLights[1].openingAngle = 30.f;
+        lightsData_.spotLights[1].position = glm::vec4(1.5, 10.0, -1.5, 0.0f);
+        lightsData_.spotLights[1].direction = glm::vec3(-2, -10, -3);
+        lightsData_.spotLights[1].exponent = 16.0f;
+        lightsData_.spotLights[1].openingAngle = 45.f;
 
-        lightsData_.spotLights[2].position = glm::vec4(1.6, 0.64, -0.45, 0.0f);
-        lightsData_.spotLights[2].direction = glm::vec3(10, -1, 0);
+        lightsData_.spotLights[2].position = glm::vec4(0.0, 15.0, 10.0, 0.0f);
+        lightsData_.spotLights[2].direction = glm::vec3(0, -1, -10);
         lightsData_.spotLights[2].exponent = 4.0f;
         lightsData_.spotLights[2].openingAngle = 60.f;
 
@@ -346,19 +347,71 @@ struct App : public OpenGLApplication
         updateBezierCurve();
 
         // Partie 3
-        // TODO: Allocation des SSBO.
-        //       Allouer suffisament d'espace pour le nombre maximal de particules.
-        //       Seulement le buffer en entrée à besoin d'être initialisé à 0.
-        //       Réfléchisser au type d'usage.
+        // Allocation des buffers de particules.
+        std::vector<Particle> particles(MAX_PARTICLES_, Particle{});
+
+        particles_[0].allocate(
+            particles.data(),
+            sizeof(Particle)* MAX_PARTICLES_,
+            GL_DYNAMIC_COPY
+        );
+
+        particles_[1].allocate(
+            nullptr,
+            sizeof(Particle)* MAX_PARTICLES_,
+            GL_DYNAMIC_COPY
+        );
 
         // TODO: Créer un vao pour le dessin des particules et activer les attributs nécessaires.
+        glGenVertexArrays(1, &vaoParticles_);
+        glBindVertexArray(vaoParticles_);
+
+        particles_[0].bindAsArray();
+
+        // Position : location 0
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(
+            0, 3, GL_FLOAT, GL_FALSE,
+            sizeof(Particle),
+            (void*)offsetof(Particle, position)
+        );
+
+        // Orientation : location 1
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(
+            1, 1, GL_FLOAT, GL_FALSE,
+            sizeof(Particle),
+            (void*)offsetof(Particle, zOrientation)
+        );
+
+        // Couleur : location 2
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(
+            2, 4, GL_FLOAT, GL_FALSE,
+            sizeof(Particle),
+            (void*)offsetof(Particle, color)
+        );
+
+        // Taille : location 3
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(
+            3, 2, GL_FLOAT, GL_FALSE,
+            sizeof(Particle),
+            (void*)offsetof(Particle, size)
+        );
+
+        glBindVertexArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 
-        // TODO: Création des nouveaux shaders.
+        // Création des shaders des particules.
+        particleComputeShader_.create();
+        particleRenderShader_.create();
 
-
-        // TODO: Initialisation de la nouvelle texture pour les particules.
-        // "../textures/smoke.png"
+        // Initialisation de la texture pour les particules.
+        particleTexture_.load("../textures/smoke.png");
+        particleTexture_.setFiltering(GL_LINEAR);
+        particleTexture_.setWrap(GL_CLAMP_TO_EDGE);
 
 
 
@@ -385,6 +438,9 @@ struct App : public OpenGLApplication
             phongShadingShader_.reload();
             skyShader_.reload();
             grassShader_.reload();
+
+            particleComputeShader_.reload();
+            particleRenderShader_.reload();
 
             setLightingUniform();
             CHECK_GL_ERROR;
@@ -901,12 +957,17 @@ struct App : public OpenGLApplication
         }
         else
         {
-            for (unsigned int i = 0; i < N_SPOTLIGHTS; i++)
-            {
-                lightsData_.spotLights[i].ambient = glm::vec4(glm::vec3(0.02f), 0.0f);
-                lightsData_.spotLights[i].diffuse = glm::vec4(glm::vec3(0.8f), 0.0f);
-                lightsData_.spotLights[i].specular = glm::vec4(glm::vec3(0.4f), 0.0f);
-            }
+            lightsData_.spotLights[0].ambient = glm::vec4(glm::vec3(0.02f, 0.0f, 0.0f), 0.0f);
+            lightsData_.spotLights[0].diffuse = glm::vec4(glm::vec3(0.80f, 0.1f, 0.1f), 0.0f);
+            lightsData_.spotLights[0].specular = glm::vec4(glm::vec3(0.4f, 0.05f, 0.05f), 0.0f);
+
+            lightsData_.spotLights[1].ambient = glm::vec4(glm::vec3(0.00f, 0.0f, 0.02f), 0.0f);
+            lightsData_.spotLights[1].diffuse = glm::vec4(glm::vec3(0.10f, 0.1f, 0.8f), 0.0f);
+            lightsData_.spotLights[1].specular = glm::vec4(glm::vec3(0.05f, 0.05f, 0.40f), 0.0f);
+
+            lightsData_.spotLights[2].ambient = glm::vec4(glm::vec3(0.02f), 0.0f);
+            lightsData_.spotLights[2].diffuse = glm::vec4(glm::vec3(0.8f), 0.0f);
+            lightsData_.spotLights[2].specular = glm::vec4(glm::vec3(0.4f), 0.0f);
         }
     }
 
@@ -1183,41 +1244,196 @@ struct App : public OpenGLApplication
         // Partie 3
         // TODO: Attention à l'endroit où vous faites votre dessin, la texture des particules est transparente.
 
-        // Particles    
+        // Particles
         totalTime += deltaTime_;
-        timerParticles_ += deltaTime_;
+
+        // Récupérer la position actuelle de la meule.
+        glm::vec3 emitterPos = windmill_.getMillstonePosition();
+
+        // Initialiser la position précédente à la première trame.
+        if (!isMillstonePositionInitialized_)
+        {
+            previousMillstonePosition_ = emitterPos;
+            isMillstonePositionInitialized_ = true;
+        }
+
+        // Calculer le déplacement de la meule depuis la dernière trame.
+        glm::vec3 millstoneMovement = emitterPos - previousMillstonePosition_;
+
+        // Mettre à jour la position précédente.
+        previousMillstonePosition_ = emitterPos;
+
+        // Vérifier si la meule est en mouvement.
+        const float movementThreshold = 0.0001f;
+        bool isMillstoneMoving =
+            glm::length(millstoneMovement) > movementThreshold;
+
+        // Émettre des particules uniquement lorsque la meule bouge.
+        if (isMillstoneMoving)
+        {
+            timerParticles_ += deltaTime_;
+        }
+
         const float particlesSpawnInterval = 0.2f;
 
-        unsigned int particlesToAdd = timerParticles_ / particlesSpawnInterval;
-        timerParticles_ -= particlesToAdd * particlesSpawnInterval;
+        unsigned int particlesToAdd = 0;
+
+        if (isMillstoneMoving)
+        {
+            particlesToAdd = static_cast<unsigned int>(
+                timerParticles_ / particlesSpawnInterval
+                );
+
+            timerParticles_ -= particlesToAdd * particlesSpawnInterval;
+        }
+        else
+        {
+            // Ne pas accumuler de temps d'émission lorsque la meule est immobile.
+            timerParticles_ = 0.0f;
+        }
 
         nParticles_ += particlesToAdd;
+
         if (nParticles_ > MAX_PARTICLES_)
             nParticles_ = MAX_PARTICLES_;
 
         // Particles update
 
-        // TODO: Mise à jour des données à l'aide du compute shader
-        //       Envoyer vos uniforms.
-
         // Utiliser la position de la meule pour calculer la nouvelle position et direction d'émission de particule.
-        // glm::vec3 emitterPos = vec3(0.0, 0.0, 0.0);
-        // glm::vec3 emitterDir = vec3(1, 0, 0);
 
-        // TODO: Configurer les buffers d'entrée et de sortie.
+        glm::vec3 radialDirection =
+            emitterPos - glm::vec3(0.0f, 0.3f, -10.0f);
 
-        // TODO: Envois de la commande de calcul.
-        //       Pas besoin d'optimiser le nombre de work group vs la taille local (dans le shader).
+        glm::vec3 emitterDir = glm::normalize(
+            glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), radialDirection)
+        );
 
+        // Activer le compute shader.
+        particleComputeShader_.use();
+
+        // Envoyer les uniforms.
+        glUniform1f(
+            particleComputeShader_.deltaTimeULoc,
+            deltaTime_
+        );
+
+        glUniform1f(
+            particleComputeShader_.timeULoc,
+            totalTime
+        );
+
+        glUniform1ui(
+            particleComputeShader_.nParticlesULoc,
+            nParticles_
+        );
+
+        glUniform1i(
+            particleComputeShader_.emitterActiveULoc,
+            isMillstoneMoving ? GL_TRUE : GL_FALSE
+        );
+
+        glUniform3fv(
+            particleComputeShader_.emitterPositionULoc,
+            1,
+            glm::value_ptr(emitterPos)
+        );
+
+        glUniform3fv(
+            particleComputeShader_.emitterDirectionULoc,
+            1,
+            glm::value_ptr(emitterDir)
+        );
+
+        // Configurer les buffers d'entrée et de sortie.
+        unsigned int outputParticleBuffer = 1 - currentParticleBuffer_;
+
+        particles_[currentParticleBuffer_].setBindingIndex(0);
+        particles_[outputParticleBuffer].setBindingIndex(1);
+
+        // Envoyer la commande de calcul.
+        glDispatchCompute(1, 1, 1);
+
+        // Attendre que le compute shader ait terminé avant de lire les données.
+        glMemoryBarrier(
+            GL_SHADER_STORAGE_BARRIER_BIT |
+            GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT
+        );
 
         // Particles draw
 
-        // TODO: Dessin des particules. Utiliser le nombre de particules actuellement utilisées.
-        //       Utiliser la texture et envoyer vos uniforms.
-        //       Il sera nécessaire de spécifier les entrée en spécifiant le buffer d'entrée.
-        //       Activer le blending et restaurer l'état du contexte modifié.
+// Configurer le VAO pour lire le buffer de sortie du Compute Shader.
+        glBindVertexArray(vaoParticles_);
 
-        // TODO: Interchanger les deux buffers, celui en entrée devient la sortie, et vice versa.
+        particles_[outputParticleBuffer].bindAsArray();
+
+        glVertexAttribPointer(
+            0, 3, GL_FLOAT, GL_FALSE,
+            sizeof(Particle),
+            (void*)offsetof(Particle, position)
+        );
+
+        glVertexAttribPointer(
+            1, 1, GL_FLOAT, GL_FALSE,
+            sizeof(Particle),
+            (void*)offsetof(Particle, zOrientation)
+        );
+
+        glVertexAttribPointer(
+            2, 4, GL_FLOAT, GL_FALSE,
+            sizeof(Particle),
+            (void*)offsetof(Particle, color)
+        );
+
+        glVertexAttribPointer(
+            3, 2, GL_FLOAT, GL_FALSE,
+            sizeof(Particle),
+            (void*)offsetof(Particle, size)
+        );
+
+        // Activer le shader de rendu.
+        particleRenderShader_.use();
+
+        glUniformMatrix4fv(
+            particleRenderShader_.modelViewULoc,
+            1,
+            GL_FALSE,
+            glm::value_ptr(view)
+        );
+
+        glUniformMatrix4fv(
+            particleRenderShader_.projectionULoc,
+            1,
+            GL_FALSE,
+            glm::value_ptr(proj)
+        );
+
+        glUniform1i(
+            particleRenderShader_.textureULoc,
+            0
+        );
+
+        // Activer la texture des particules.
+        glActiveTexture(GL_TEXTURE0);
+        particleTexture_.use();
+
+        // Configurer la transparence.
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+        glDisable(GL_CULL_FACE);
+
+        // Dessiner les particules sous forme de points.
+        glDrawArrays(GL_POINTS, 0, nParticles_);
+
+        // Restaurer les états OpenGL.
+        glBindVertexArray(0);
+        glDepthMask(GL_TRUE);
+        glDisable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ZERO);
+        glEnable(GL_CULL_FACE);
+
+        // Échanger les buffers pour la prochaine trame.
+        currentParticleBuffer_ = outputParticleBuffer;
 
     }
 
@@ -1299,19 +1515,27 @@ private:
 
     // Partie 3
     // TODO: Attributs supplémentaires
-    GLuint vaoParticles_;
+    GLuint vaoParticles_ = 0;
 
     float totalTime;
     float timerParticles_;
 
+    glm::vec3 previousMillstonePosition_;
+    bool isMillstonePositionInitialized_ = false;
+
     static const unsigned int MAX_PARTICLES_ = 64;
     unsigned int nParticles_;
 
-    // TODO: Ajouter vos shaders
-    // TODO: Ajouter la texture de particule
+    // Shaders des particules
+    ParticleComputeShader particleComputeShader_;
+    ParticleRenderShader particleRenderShader_;
+
+    // Texture des particules
+    Texture2D particleTexture_;
 
     // Ssbo
     ShaderStorageBuffer particles_[2];
+    unsigned int currentParticleBuffer_ = 0;
 
 };
 

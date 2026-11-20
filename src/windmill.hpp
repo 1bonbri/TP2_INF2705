@@ -21,6 +21,8 @@ public:
     
     void draw(glm::mat4& projView, glm::mat4& view); // À besoin de la matrice de vue séparément, pour la partie 3.
 
+    glm::vec3 getMillstonePosition() const;
+
     
 private:
     
@@ -55,5 +57,6 @@ public:
     float roofAngle;
     
     PhongShading* phongShadingShader = nullptr;
+
 
 };

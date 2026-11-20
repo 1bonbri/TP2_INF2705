@@ -1,7 +1,6 @@
 #version 430 core
 
-// TODO: À remplir
-// layout() in;
+layout(local_size_x = 64) in;
 
 struct Particle
 {
@@ -28,32 +27,96 @@ uniform float time;
 uniform float deltaTime;
 uniform vec3 emitterPosition;
 uniform vec3 emitterDirection;
+uniform uint nParticles;
+uniform bool emitterActive;
 
 // Random [0, 1]
-float rand01()
+float rand01(float seed)
 {
-    return fract(sin(dot(vec2(time*100, gl_GlobalInvocationID.x), vec2(12.9898, 78.233))) * 43758.5453);
+    return fract(sin(dot(
+        vec2(time * 100.0 + seed, gl_GlobalInvocationID.x),
+        vec2(12.9898, 78.233)
+    )) * 43758.5453);
 }
 
 void main()
 {
-    // TODO: Mise à jour des particules. À partir de l'entrée, metter à jour la particule.
-    //
-    //       Si le temps de vie est à 0 ou en dessous, on procède à l'initialisation:
-    //           - La particule commence à la position de l'émetteur.
-    //           - Son orientation est aléatoire entre [0, 2pi].
-    //           - La particule va dans la direction à une vitesse de 0.3 unité/s.
-    //           - La particule monte naturellement vers le haut à une vitesse de 0.2 unité/s.
-    //           - La couleur initiale est grise (0.61, 0.52, 0.38).
-    //           - La taille initiale est de 1.2 unité pour chaque segment.
-    //           - Le temps de vie de la particule est entre [2.5, 4.0].
-    //
-    //      Pour la mise à jour:
-    //          - Réduiser le temps de vie.
-    //          - Mise à jour de la position par la méthode d'Euler.
-    //          - L'orientation a une vitesse angulaire constante de 0.5.
-    //          - La couleur devient blanche de façon linéaire selon le temps de vie.
-    //          - L'opacité est à 0.2 et a un effet de fade in/out de [0, 0.2] et [0.8, 1].
-    //          - La taille augmente de façon linéaire jusqu'à 2.5 unité en fonction du temps de vie.
-}
+    uint index = gl_GlobalInvocationID.x;
 
+    // Évite de dépasser le nombre maximal de particules.
+    if (index >= 64u)
+        return;
+
+    // Les particules qui ne sont pas encore actives ne sont pas mises à jour.
+    if (index >= nParticles)
+    {
+        dataOut.particles[index] = dataIn.particles[index];
+        return;
+    }
+
+    Particle p = dataIn.particles[index];
+
+    // Initialisation de la particule si son temps de vie est écoulé.
+    if (p.timeToLive <= 0.0)
+    {
+        // Ne pas créer de nouvelles particules lorsque la meule est immobile.
+        if (!emitterActive)
+        {
+            dataOut.particles[index] = p;
+            return;
+        }
+
+        p.position = emitterPosition;
+
+        // Orientation aléatoire entre [0, 2pi].
+        p.zOrientation = rand01(1.0) * 6.28318530718;
+
+        // Direction de déplacement et mouvement naturel vers le haut.
+        p.velocity = normalize(emitterDirection) * 0.3
+                   + vec3(0.0, 0.2, 0.0);
+
+        p.color = vec4(0.61, 0.52, 0.38, 0.0);
+
+        // Taille initiale.
+        p.size = vec2(1.2);
+
+        // Temps de vie aléatoire entre [2.5, 4.0].
+        p.maxTimeToLive = mix(2.5, 4.0, rand01(2.0));
+        p.timeToLive = p.maxTimeToLive;
+    }
+    else
+    {
+        // Réduire le temps de vie.
+        p.timeToLive -= deltaTime;
+
+        // Mise à jour de la position par la méthode d'Euler.
+        p.position += p.velocity * deltaTime;
+
+        // Rotation constante autour de l'axe Z.
+        p.zOrientation += 0.5 * deltaTime;
+
+        // Progression de la particule : 0 = naissance, 1 = fin de vie.
+        float age = 1.0 - p.timeToLive / p.maxTimeToLive;
+        age = clamp(age, 0.0, 1.0);
+
+        // La couleur devient progressivement blanche.
+        p.color.rgb = mix(
+            vec3(0.61, 0.52, 0.38),
+            vec3(1.0),
+            age
+        );
+
+        // Fade in et fade out de l'opacité.
+        float fadeIn = smoothstep(0.0, 0.2, age);
+        float fadeOut = 1.0 - smoothstep(0.8, 1.0, age);
+
+        p.color.a = 0.2 * fadeIn * fadeOut;
+
+        // Augmentation linéaire de la taille jusqu'à 2.5.
+        float particleSize = mix(1.2, 2.5, age);
+        p.size = vec2(particleSize);
+    }
+
+    // Écrire la particule mise à jour dans le buffer de sortie.
+    dataOut.particles[index] = p;
+}

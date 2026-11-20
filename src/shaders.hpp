@@ -79,3 +79,31 @@ protected:
     virtual void load() override;
     virtual void getAllUniformLocations() override;
 };
+
+class ParticleComputeShader : public ShaderProgram
+{
+public:
+    GLint deltaTimeULoc;
+    GLint emitterPositionULoc;
+    GLint emitterDirectionULoc;
+    GLint timeULoc;
+    GLint nParticlesULoc;
+    GLint emitterActiveULoc;
+
+protected:
+    virtual void load() override;
+    virtual void getAllUniformLocations() override;
+};
+
+
+class ParticleRenderShader : public ShaderProgram
+{
+public:
+    GLint modelViewULoc;
+    GLint projectionULoc;
+    GLint textureULoc;
+
+protected:
+    virtual void load() override;
+    virtual void getAllUniformLocations() override;
+};

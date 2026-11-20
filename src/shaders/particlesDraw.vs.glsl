@@ -1,16 +1,27 @@
 #version 330 core
 
-// TODO: Définisser les inputs nécessaires pour le dessin.
-//       Les propriétés des particules ne sont pas tous utiles ici.
+// Propriétés des particules provenant du VAO.
+layout(location = 0) in vec3 position;
+layout(location = 1) in float zOrientation;
+layout(location = 2) in vec4 color;
+layout(location = 3) in vec2 size;
 
 out ATTRIB_VS_OUT
 {
-    // TODO: Ajouter les attributs si nécessaire
+    float zOrientation;
+    vec4 color;
+    vec2 size;
 } attribOut;
 
 uniform mat4 modelView;
 
 void main()
 {
-    // TODO: À remplir
+    // Transformer la position de la particule en coordonnées caméra.
+    gl_Position = modelView * vec4(position, 1.0);
+
+    // Transmettre les propriétés nécessaires au geometry shader.
+    attribOut.zOrientation = zOrientation;
+    attribOut.color = color;
+    attribOut.size = size;
 }

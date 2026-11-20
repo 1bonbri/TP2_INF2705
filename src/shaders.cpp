@@ -95,3 +95,37 @@ void GrassShader::getAllUniformLocations()
     mvpULoc = glGetUniformLocation(id_, "mvp");
     modelViewULoc = glGetUniformLocation(id_, "modelView");
 }
+
+void ParticleComputeShader::load()
+{
+    name_ = "ParticleCompute";
+    loadShaderSource(GL_COMPUTE_SHADER, "./shaders/particlesUpdate.cs.glsl");
+    link();
+}
+
+void ParticleComputeShader::getAllUniformLocations()
+{
+    deltaTimeULoc = glGetUniformLocation(id_, "deltaTime");
+    emitterPositionULoc = glGetUniformLocation(id_, "emitterPosition");
+    emitterDirectionULoc = glGetUniformLocation(id_, "emitterDirection");
+    timeULoc = glGetUniformLocation(id_, "time");
+    nParticlesULoc = glGetUniformLocation(id_, "nParticles");
+    emitterActiveULoc = glGetUniformLocation(id_, "emitterActive");
+}
+
+
+void ParticleRenderShader::load()
+{
+    name_ = "ParticleRender";
+    loadShaderSource(GL_VERTEX_SHADER, "./shaders/particlesDraw.vs.glsl");
+    loadShaderSource(GL_GEOMETRY_SHADER, "./shaders/particlesDraw.gs.glsl");
+    loadShaderSource(GL_FRAGMENT_SHADER, "./shaders/particlesDraw.fs.glsl");
+    link();
+}
+
+void ParticleRenderShader::getAllUniformLocations()
+{
+    modelViewULoc = glGetUniformLocation(id_, "modelView");
+    projectionULoc = glGetUniformLocation(id_, "projection");
+    textureULoc = glGetUniformLocation(id_, "particleTexture");
+}
